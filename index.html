@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard de Refugos</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f4f6f8;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .kpi {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,.1);
+    }
+
+    .kpi h2 {
+      margin: 5px 0;
+      color: #007bff;
+    }
+
+    .filters {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+
+    canvas {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>📊 Dashboard de Refugos</h1>
+
+<!-- KPIs -->
+<div class="kpis">
+  <div class="kpi">
+    <div>Total Refugado</div>
+    <h2 id="kpiTotal">0</h2>
+  </div>
+  <div class="kpi">
+    <div>Média / Dia</div>
+    <h2 id="kpiMedia">0</h2>
+  </div>
+  <div class="kpi">
+    <div>Principal Causa</div>
+    <h2 id="kpiCausa">-</h2>
+  </div>
+  <div class="kpi">
+    <div>Produto Crítico</div>
+    <h2 id="kpiProduto">-</h2>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="filters">
+  <select id="filtroProduto"></select>
+  <select id="filtroRefugo"></select>
+  <input type="date" id="filtroData">
+</div>
+
+<!-- Gráficos -->
+<div class="charts">
+  <canvas id="graficoTempo"></canvas>
+  <canvas id="graficoRanking"></canvas>
+</div>
+
+<script>
+let dados = [];
+let graficoTempo, graficoRanking;
+
+// Carregar CSV
+fetch('refugos.csv')
+  .then(res => res.text())
+  .then(texto => {
+    const linhas = texto.split('\n');
+    const cabecalho = linhas[0].split(';');
+
+    dados = linhas.slice(1).map(l => {
+      const col = l.split(';');
+      return {
+        data: col[0],
+        produto: col[1],
+        refugo: col[2],
+        qtd: Number(col[3])
+      };
+    });
+
+    popularFiltros();
+    atualizarDashboard();
+  });
+
+function popularFiltros() {
+  const produtos = [...new Set(dados.map(d => d.produto))];
+  const refugos = [...new Set(dados.map(d => d.refugo))];
+
+  document.getElementById('filtroProduto').innerHTML =
+    '<option value="">Todos Produtos</option>' +
+    produtos.map(p => `<option>${p}</option>`).join('');
+
+  document.getElementById('filtroRefugo').innerHTML =
+    '<option value="">Todos Refugos</option>' +
+    refugos.map(r => `<option>${r}</option>`).join('');
+}
+
+document.querySelectorAll('select, input').forEach(el => {
+  el.addEventListener('change', atualizarDashboard);
+});
+
+function atualizarDashboard() {
+  const prod = filtroProduto.value;
+  const ref = filtroRefugo.value;
+  const data = filtroData.value;
+
+  const filtrado = dados.filter(d =>
+    (!prod || d.produto === prod) &&
+    (!ref || d.refugo === ref) &&
+    (!data || d.data === data)
+  );
+
+  atualizarKPIs(filtrado);
+  atualizarGraficoTempo(filtrado);
+  atualizarRanking(filtrado);
+}
+
+function atualizarKPIs(d) {
+  const total = d.reduce((s, x) => s + x.qtd, 0);
+  kpiTotal.innerText = total;
+
+  const dias = new Set(d.map(x => x.data)).size || 1;
+  kpiMedia.innerText = (total / dias).toFixed(1);
+
+  kpiCausa.innerText = topValor(d, 'refugo');
+  kpiProduto.innerText = topValor(d, 'produto');
+}
+
+function topValor(dados, campo) {
+  const map = {};
+  dados.forEach(d => map[d[campo]] = (map[d[campo]] || 0) + d.qtd);
+  return Object.entries(map).sort((a,b)=>b[1]-a[1])[0]?.[0] || '-';
+}
+
+function atualizarGraficoTempo(d) {
+  const map = {};
+  d.forEach(x => map[x.data] = (map[x.data] || 0) + x.qtd);
+
+  const labels = Object.keys(map);
+  const valores = Object.values(map);
+
+  if (graficoTempo) graficoTempo.destroy();
+  graficoTempo = new Chart(graficoTempo, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label: 'Refugos por dia', data: valores }]
+    }
+  });
+}
+
+function atualizarRanking(d) {
+  const map = {};
+  d.forEach(x => map[x.produto] = (map[x.produto] || 0) + x.qtd);
+
+  const ordenado = Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  if (graficoRanking) graficoRanking.destroy();
+  graficoRanking = new Chart(graficoRanking, {
+    type: 'bar',
+    data: {
+      labels: ordenado.map(x=>x[0]),
+      datasets: [{ label: 'Top Produtos', data: ordenado.map(x=>x[1]) }]
+    }
+  });
+}
+</script>
+
+</body>
+</html>
