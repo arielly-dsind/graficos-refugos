@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório Automático de Refugos</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; margin: 20px; }
+textarea { width: 100%; height: 180px; }
+button { margin-top: 10px; padding: 8px 14px; cursor: pointer; }
+.kpis { display: flex; gap: 20px; margin: 20px 0; }
+.kpi { background: #f2f2f2; padding: 15px; border-radius: 8px; }
+canvas { margin-top: 30px; }
+table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 12px; }
+th, td { border: 1px solid #ccc; padding: 5px; }
+th { background: #eee; }
+</style>
+</head>
+
+<body>
+
+<h1>📊 Relatório Automático de Refugos</h1>
+
+<p>Cole abaixo os dados copiados do Excel (mesmo padrão da planilha):</p>
+
+<textarea id="entrada" placeholder="Cole aqui os dados..."></textarea>
+<br>
+<button onclick="processar()">Gerar Relatório</button>
+
+<!-- KPIs -->
+<div class="kpis">
+  <div class="kpi">Total Refugos: <b id="kpiTotal">0</b></div>
+  <div class="kpi">Registros: <b id="kpiRegistros">0</b></div>
+  <div class="kpi">Tipos de Refugo: <b id="kpiTipos">0</b></div>
+</div>
+
+<canvas id="graficoMotivo"></canvas>
+<canvas id="graficoPareto"></canvas>
+
+<table id="tabela">
+<thead>
+<tr>
+<th>Data Apont.</th>
+<th>Cód. Recurso</th>
+<th>Cód. Usu.</th>
+<th>Cód. Ordem</th>
+<th>Cód. Produto</th>
+<th>Nome Produto</th>
+<th>Qtd</th>
+<th>Cód. Refugo</th>
+<th>Nome Refugo</th>
+<th>Cód. Lote</th>
+<th>Comentários</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<script>
+let dados = [];
+let graficoMotivo, graficoPareto;
+
+function parseData(valor) {
+  const [data] = valor.split(" ");
+  const [d,m,y] = data.split("/");
+  return new Date(y, m-1, d);
+}
+
+function processar() {
+  const texto = entrada.value.trim();
+  if (!texto) return alert("Cole os dados primeiro");
+
+  dados = texto.split("\n").map(l => {
+    const c = l.split("\t"); // Excel usa TAB
+    if (c.length < 11) return null;
+
+    return {
+      data: parseData(c[0]),
+      recurso: c[1],
+      usuario: c[2],
+      ordem: c[3],
+      produto: c[4],
+      nomeProduto: c[5],
+      quantidade: Number(c[6]),
+      codRefugo: c[7],
+      nomeRefugo: c[8],
+      lote: c[9],
+      comentarios: c[10]
+    };
+  }).filter(l => l && !isNaN(l.quantidade));
+
+  atualizar();
+}
+
+function atualizar() {
+  atualizarKPIs();
+  atualizarTabela();
+  graficoPorMotivo();
+  graficoParetoFunc();
+}
+
+function atualizarKPIs() {
+  kpiTotal.innerText = dados.reduce((s,d)=>s+d.quantidade,0);
+  kpiRegistros.innerText = dados.length;
+  kpiTipos.innerText = new Set(dados.map(d=>d.nomeRefugo)).size;
+}
+
+function atualizarTabela() {
+  const tbody = document.querySelector("#tabela tbody");
+  tbody.innerHTML = "";
+  dados.forEach(d => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${d.data.toLocaleDateString()}</td>
+        <td>${d.recurso}</td>
+        <td>${d.usuario}</td>
+        <td>${d.ordem}</td>
+        <td>${d.produto}</td>
+        <td>${d.nomeProduto}</td>
+        <td>${d.quantidade}</td>
+        <td>${d.codRefugo}</td>
+        <td>${d.nomeRefugo}</td>
+        <td>${d.lote}</td>
+        <td>${d.comentarios}</td>
+      </tr>`;
+  });
+}
+
+function graficoPorMotivo() {
+  const map = {};
+  dados.forEach(d => map[d.nomeRefugo] = (map[d.nomeRefugo]||0)+d.quantidade);
+
+  if (graficoMotivo) graficoMotivo.destroy();
+
+  graficoMotivo = new Chart(graficoMotivo = document.getElementById("graficoMotivo"), {
+    type:"bar",
+    data:{ labels:Object.keys(map), datasets:[{label:"Quantidade", data:Object.values(map)}]}
+  });
+}
+
+function graficoParetoFunc() {
+  const map = {};
+  dados.forEach(d => map[d.nomeRefugo] = (map[d.nomeRefugo]||0)+d.quantidade);
+
+  const ord = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  let acum = 0;
+  const total = ord.reduce((s,[,v])=>s+v,0);
+
+  if (graficoPareto) graficoPareto.destroy();
+
+  graficoPareto = new Chart(document.getElementById("graficoPareto"), {
+    data:{
+      labels: ord.map(o=>o[0]),
+      datasets:[
+        { type:"bar", label:"Qtd", data: ord.map(o=>o[1]) },
+        { type:"line", label:"% Acumulado", yAxisID:"y1",
+          data: ord.map(o=>{ acum+=o[1]; return (acum/total*100).toFixed(1); })
+        }
+      ]
+    },
+    options:{ scales:{ y1:{ position:"right", min:0, max:100 } } }
+  });
+}
+</script>
+
+</body>
+</html>
