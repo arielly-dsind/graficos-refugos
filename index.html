@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard de Refugos</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+    h1 { margin-bottom: 5px; }
+    textarea { width: 100%; height: 180px; }
+    .filtros, .kpis { display: flex; gap: 15px; margin: 15px 0; flex-wrap: wrap; }
+    .box { background: white; padding: 15px; border-radius: 8px; min-width: 200px; }
+    canvas { background: white; border-radius: 8px; padding: 10px; }
+    button { padding: 10px 20px; cursor: pointer; }
+  </style>
+</head>
+
+<body>
+
+<h1>Dashboard de Refugos</h1>
+<p>Cole abaixo os dados exatamente como estão no Excel</p>
+
+<textarea id="entrada"
+placeholder="Data Apont.	Cód. Recurso	Cód. Usu. Apont.	Cód. Ordem	Cód. Produto	Nome Produto	Quantidade	Cód. Refugo	Nome Refugo	Cód. Lote	Comentários">
+</textarea>
+
+<br><br>
+<button onclick="processar()">Gerar Relatório</button>
+
+<!-- FILTRO -->
+<div class="filtros box">
+  <div>
+    <label>Data Inicial</label><br>
+    <input type="date" id="dataInicio">
+  </div>
+  <div>
+    <label>Data Final</label><br>
+    <input type="date" id="dataFim">
+  </div>
+  <div style="align-self:end">
+    <button onclick="aplicarFiltro()">Aplicar Filtro</button>
+  </div>
+</div>
+
+<!-- KPIs BÁSICOS -->
+<div class="kpis">
+  <div class="box">Total de Registros<br><b id="kpiRegistros">0</b></div>
+  <div class="box">Quantidade Total<br><b id="kpiQuantidade">0</b></div>
+  <div class="box">Tipos de Refugo<br><b id="kpiTipos">0</b></div>
+</div>
+
+<!-- KPIs AVANÇADOS -->
+<div class="kpis">
+  <div class="box">Média Diária de Refugo<br><b id="kpiMediaDiaria">0</b></div>
+  <div class="box">Operador com Mais Refugo<br><b id="kpiOperador">-</b></div>
+  <div class="box">Maior Motivo de Refugo<br><b id="kpiMotivo">-</b></div>
+</div>
+
+<br>
+
+<canvas id="graficoRefugo"></canvas>
+<br><br>
+<canvas id="graficoPareto"></canvas>
+
+<script>
+let dados = [];
+let dadosFiltrados = [];
+let grafico1, grafico2;
+
+function parseData(texto) {
+  if (!texto) return null;
+  const [data, hora] = texto.split(" ");
+  const [d, m, a] = data.split("/");
+  return new Date(`${a}-${m}-${d}T${hora || "00:00:00"}`);
+}
+
+function processar() {
+  const texto = document.getElementById("entrada").value.trim();
+  if (!texto) return alert("Cole os dados.");
+
+  const linhas = texto.split("\n");
+  dados = [];
+  let descartadas = 0;
+
+  linhas.forEach(linha => {
+    const c = linha.split("\t");
+    if (c.length < 10) { descartadas++; return; }
+
+    const qtd = Number(String(c[6]).replace(",", ".").trim());
+    if (isNaN(qtd)) { descartadas++; return; }
+
+    dados.push({
+      data: parseData(c[0]),
+      recurso: c[1] || "",
+      usuario: c[2] || "",
+      ordem: c[3] || "",
+      produto: c[4] || "",
+      nomeProduto: c[5] || "",
+      quantidade: qtd,
+      codRefugo: c[7] || "",
+      nomeRefugo: c[8] || "",
+      lote: c[9] || "",
+      comentarios: c[10] || ""
+    });
+  });
+
+  console.log("Coladas:", linhas.length);
+  console.log("Lidas:", dados.length);
+  console.log("Descartadas:", descartadas);
+
+  dadosFiltrados = [...dados];
+  atualizar();
+}
+
+function aplicarFiltro() {
+  const ini = document.getElementById("dataInicio").value;
+  const fim = document.getElementById("dataFim").value;
+
+  dadosFiltrados = dados.filter(d => {
+    if (!d.data) return false;
+    if (ini && d.data < new Date(ini)) return false;
+    if (fim && d.data > new Date(fim + "T23:59:59")) return false;
+    return true;
+  });
+
+  atualizar();
+}
+
+function atualizar() {
+  // KPIs básicos
+  document.getElementById("kpiRegistros").innerText = dadosFiltrados.length;
+
+  const totalQuantidade = dadosFiltrados.reduce((s, d) => s + d.quantidade, 0);
+  document.getElementById("kpiQuantidade").innerText = totalQuantidade;
+
+  const tipos = new Set(dadosFiltrados.map(d => d.nomeRefugo));
+  document.getElementById("kpiTipos").innerText = tipos.size;
+
+  // MÉDIA DIÁRIA
+  const dias = new Set(
+    dadosFiltrados
+      .filter(d => d.data)
+      .map(d => d.data.toISOString().slice(0, 10))
+  );
+  document.getElementById("kpiMediaDiaria").innerText =
+    dias.size ? (totalQuantidade / dias.size).toFixed(2) : 0;
+
+  // OPERADOR COM MAIS REFUGO
+  const porOperador = {};
+  dadosFiltrados.forEach(d => {
+    porOperador[d.usuario] = (porOperador[d.usuario] || 0) + d.quantidade;
+  });
+  const operadorTop = Object.entries(porOperador).sort((a, b) => b[1] - a[1])[0];
+  document.getElementById("kpiOperador").innerText =
+    operadorTop ? `${operadorTop[0]} (${operadorTop[1]})` : "-";
+
+  // MAIOR MOTIVO DE REFUGO
+  const porMotivo = {};
+  dadosFiltrados.forEach(d => {
+    porMotivo[d.nomeRefugo] = (porMotivo[d.nomeRefugo] || 0) + d.quantidade;
+  });
+  const motivoTop = Object.entries(porMotivo).sort((a, b) => b[1] - a[1])[0];
+  document.getElementById("kpiMotivo").innerText =
+    motivoTop ? `${motivoTop[0]} (${motivoTop[1]})` : "-";
+
+  gerarGraficos();
+}
+
+function gerarGraficos() {
+  const mapa = {};
+  dadosFiltrados.forEach(d => {
+    mapa[d.nomeRefugo] = (mapa[d.nomeRefugo] || 0) + d.quantidade;
+  });
+
+  const labels = Object.keys(mapa);
+  const valores = Object.values(mapa);
+
+  if (grafico1) grafico1.destroy();
+  grafico1 = new Chart(document.getElementById("graficoRefugo"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Quantidade por Refugo",
+        data: valores,
+        backgroundColor: "#1976d2"
+      }]
+    }
+  });
+
+  // PARETO
+  const ordenado = labels
+    .map((l, i) => ({ nome: l, valor: valores[i] }))
+    .sort((a, b) => b.valor - a.valor);
+
+  let acumulado = 0;
+  const total = ordenado.reduce((s, o) => s + o.valor, 0);
+  const perc = ordenado.map(o => {
+    acumulado += o.valor;
+    return (acumulado / total * 100).toFixed(1);
+  });
+
+  if (grafico2) grafico2.destroy();
+  grafico2 = new Chart(document.getElementById("graficoPareto"), {
+    data: {
+      labels: ordenado.map(o => o.nome),
+      datasets: [
+        {
+          type: "bar",
+          label: "Quantidade",
+          data: ordenado.map(o => o.valor),
+          backgroundColor: "#ef6c00"
+        },
+        {
+          type: "line",
+          label: "% Acumulado",
+          data: perc,
+          yAxisID: "y1",
+          borderColor: "#000",
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      scales: {
+        y: { beginAtZero: true },
+        y1: {
+          beginAtZero: true,
+          position: "right",
+          max: 100,
+          ticks: { callback: v => v + "%" }
+        }
+      }
+    }
+  });
+}
+</script>
+
+</body>
+</html>
