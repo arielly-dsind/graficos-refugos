@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard de Refugos</title>
+
+<link rel="icon" type="image/png" href="favicon.png">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; margin: 20px; background:#f4f6f9;}
+textarea { width:100%; height:180px; }
+.kpis, .filtros { display:flex; gap:15px; flex-wrap:wrap; margin:15px 0; }
+.box { background:white; padding:15px; border-radius:8px; min-width:200px;}
+canvas { background:white; margin-bottom:30px; padding:10px; border-radius:8px;}
+button { padding:10px 20px; cursor:pointer;}
+</style>
+</head>
+
+<body>
+
+<h1>Dashboard de Refugos</h1>
+
+<textarea id="entrada"
+placeholder="Cole aqui os dados do Excel respeitando as 11 colunas">
+</textarea>
+<br><br>
+<button onclick="processar()">Gerar Relatório</button>
+
+<div class="filtros box">
+<div>
+<label>Data Inicial</label><br>
+<input type="date" id="dataInicio">
+</div>
+
+<div>
+<label>Data Final</label><br>
+<input type="date" id="dataFim">
+</div>
+
+<div style="align-self:end">
+<button onclick="aplicarFiltro()">Aplicar Filtro</button>
+</div>
+</div>
+
+<div class="kpis">
+<div class="box">Total Registros<br><b id="kpiRegistros">0</b></div>
+<div class="box">Total Quantidade<br><b id="kpiQuantidade">0</b></div>
+</div>
+
+<h2>Índice por Linha do Produto</h2>
+<canvas id="grafLinha"></canvas>
+
+<h2>Índice por Classificação</h2>
+<canvas id="grafClassificacao"></canvas>
+
+<h2>Índice por Nome do Refugo</h2>
+<canvas id="grafRefugo"></canvas>
+
+<h2>Índice por Código do Produto</h2>
+<canvas id="grafProduto"></canvas>
+
+<h2>Índice por Usuário (Operador)</h2>
+<canvas id="grafUsuario"></canvas>
+
+<script>
+
+let dados = [];
+let dadosFiltrados = [];
+let graficos = [];
+
+function parseData(texto){
+const [data,hora] = texto.split(" ");
+const [d,m,a] = data.split("/");
+return new Date(`${a}-${m}-${d}T${hora||"00:00:00"}`);
+}
+
+function processar(){
+const texto = document.getElementById("entrada").value.trim();
+if(!texto) return alert("Cole os dados");
+
+dados = [];
+
+texto.split("\n").forEach(linha=>{
+const c = linha.split("\t");
+if(c.length < 11) return;
+
+dados.push({
+data: parseData(c[0]),
+recurso: c[1],
+usuario: c[2],
+ordem: c[3],
+codProduto: c[4],
+nomeProduto: c[5],
+quantidade: Number(c[6].replace(",", ".")),
+codRefugo: c[7],
+nomeRefugo: c[8],
+classificacao: c[9],
+linhaProduto: c[10]
+});
+});
+
+dadosFiltrados = [...dados];
+atualizar();
+}
+
+function aplicarFiltro(){
+const ini = document.getElementById("dataInicio").value;
+const fim = document.getElementById("dataFim").value;
+
+dadosFiltrados = dados.filter(d=>{
+if(!d.data) return false;
+if(ini && d.data < new Date(ini)) return false;
+if(fim && d.data > new Date(fim+"T23:59:59")) return false;
+return true;
+});
+
+atualizar();
+}
+
+function atualizar(){
+
+document.getElementById("kpiRegistros").innerText = dadosFiltrados.length;
+document.getElementById("kpiQuantidade").innerText =
+dadosFiltrados.reduce((s,d)=>s+d.quantidade,0);
+
+gerarGrafico("grafLinha","linhaProduto");
+gerarGrafico("grafClassificacao","classificacao");
+gerarGrafico("grafRefugo","nomeRefugo");
+gerarGrafico("grafProduto","codProduto");
+gerarGrafico("grafUsuario","usuario");
+
+}
+
+function gerarGrafico(canvasId, campo){
+
+const mapa = {};
+dadosFiltrados.forEach(d=>{
+mapa[d[campo]] = (mapa[d[campo]]||0) + d.quantidade;
+});
+
+const labels = Object.keys(mapa);
+const valores = Object.values(mapa);
+
+if(graficos[canvasId]) graficos[canvasId].destroy();
+
+graficos[canvasId] = new Chart(document.getElementById(canvasId),{
+type:"bar",
+data:{
+labels:labels,
+datasets:[{
+label:"Quantidade",
+data:valores
+}]
+},
+options:{
+responsive:true,
+plugins:{legend:{display:false}}
+}
+});
+
+}
+
+</script>
+
+</body>
+</html>
