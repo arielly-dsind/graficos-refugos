@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>DS - Dashboard OEE</title>
+
+<link rel="icon" type="image/png" href="./logo.png?v=4">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+--vermelho:#c40000;
+--azul:#007bff;
+--verde:#28a745;
+--grafite:#121212;
+--grafiteCard:#1f1f1f;
+--claro:#f4f6f9;
+}
+
+body{
+margin:0;
+font-family:Arial;
+background:var(--grafite);
+color:white;
+transition:0.3s;
+}
+
+header{
+display:flex;
+align-items:center;
+padding:15px 30px;
+background:#000;
+}
+
+.logo-area{
+display:flex;
+align-items:center;
+gap:15px;
+}
+
+button{
+padding:8px 18px;
+border:none;
+background:var(--vermelho);
+color:white;
+border-radius:6px;
+cursor:pointer;
+font-weight:bold;
+}
+
+.toggle{
+background:#333;
+margin-left:auto;
+}
+
+.banner{
+padding:40px;
+background:linear-gradient(to right,#1f1f1f,#2a2a2a);
+}
+
+.container{
+padding:30px 40px;
+}
+
+textarea{
+width:100%;
+height:140px;
+padding:10px;
+border-radius:8px;
+border:none;
+background:#2a2a2a;
+color:white;
+}
+
+.filtros{
+display:flex;
+flex-wrap:wrap;
+gap:20px;
+margin:20px 0;
+align-items:flex-end;
+}
+
+select,input{
+padding:8px;
+border-radius:6px;
+border:none;
+background:#2a2a2a;
+color:white;
+}
+
+.filtro-group{
+display:flex;
+flex-direction:column;
+}
+
+.kpis{
+display:flex;
+gap:20px;
+flex-wrap:wrap;
+margin:20px 0;
+}
+
+.card{
+background:var(--grafiteCard);
+padding:20px;
+border-radius:10px;
+min-width:200px;
+box-shadow:0 3px 10px rgba(0,0,0,0.4);
+}
+
+canvas{
+background:var(--grafiteCard);
+padding:15px;
+border-radius:10px;
+margin-bottom:40px;
+}
+
+.light{
+background:var(--claro);
+color:black;
+}
+
+.light textarea,
+.light select,
+.light input{
+background:white;
+color:black;
+border:1px solid #ccc;
+}
+
+.light .card,
+.light canvas{
+background:white;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="logo-area">
+<h2 style="color:#c40000;margin:0;">DS</h2>
+<button onclick="voltar()">⬅ Voltar</button>
+</div>
+<button class="toggle" onclick="alternarModo()">☀️</button>
+</header>
+
+<div class="banner">
+<h1 style="margin:0;">Dashboard OEE</h1>
+</div>
+
+<div class="container">
+
+<textarea id="entrada" placeholder="Cole os dados respeitando as 9 colunas"></textarea>
+<br><br>
+<button onclick="processar()">Gerar Relatório</button>
+
+<div class="filtros">
+
+<div class="filtro-group">
+<label>Data Inicial</label>
+<input type="date" id="fDataInicio">
+</div>
+
+<div class="filtro-group">
+<label>Data Final</label>
+<input type="date" id="fDataFim">
+</div>
+
+<div class="filtro-group">
+<label>Operador</label>
+<select id="fOperador"><option value="">Todos</option></select>
+</div>
+
+<div class="filtro-group">
+<label>Máquina</label>
+<select id="fRecurso"><option value="">Todos</option></select>
+</div>
+
+<button onclick="aplicarFiltros()">Aplicar Filtros</button>
+<button onclick="limparFiltros()">Limpar</button>
+
+</div>
+
+<div class="kpis">
+<div class="card">
+Velocidade Padrão Média<br>
+<b id="velPadrao">0</b>
+</div>
+
+<div class="card">
+Velocidade Real Média<br>
+<b id="velReal">0</b>
+</div>
+</div>
+
+<h2>Média Performance / Qualidade / Disponibilidade por Máquina</h2>
+<canvas id="grafRecurso"></canvas>
+
+<h2>Média Performance / Qualidade / Disponibilidade por Operador</h2>
+<canvas id="grafOperador"></canvas>
+
+</div>
+
+<script>
+
+let dados=[];
+let dadosFiltrados=[];
+let graficos={};
+
+function voltar(){
+window.location.href="index.html";
+}
+
+function alternarModo(){
+document.body.classList.toggle("light");
+}
+
+function parseData(t){
+const [d,m,a]=t.split("/");
+return new Date(`${a}-${m}-${d}`);
+}
+
+function normalizar(v){
+if(!v)return 0;
+v=v.replace("%","").replace(",",".");
+v=Number(v);
+if(v>1)v=v/100;
+return v;
+}
+
+function processar(){
+
+dados=[];
+const texto=document.getElementById("entrada").value.trim();
+if(!texto)return alert("Cole os dados");
+
+texto.split("\n").forEach(l=>{
+const c=l.split("\t");
+if(c.length<9)return;
+
+dados.push({
+data:parseData(c[0]),
+recurso:c[1],
+operador:c[2],
+velPadrao:Number(c[3].replace(",", ".")),
+velReal:Number(c[4].replace(",", ".")),
+performance:normalizar(c[5]),
+qualidade:normalizar(c[6]),
+disponibilidade:normalizar(c[7])
+});
+});
+
+popularFiltros();
+dadosFiltrados=[...dados];
+atualizar();
+}
+
+function popularFiltros(){
+popularSelect("fOperador","operador");
+popularSelect("fRecurso","recurso");
+}
+
+function popularSelect(id,campo){
+const select=document.getElementById(id);
+const valores=[...new Set(dados.map(d=>d[campo]))].sort();
+select.innerHTML='<option value="">Todos</option>';
+valores.forEach(v=>{
+select.innerHTML+=`<option value="${v}">${v}</option>`;
+});
+}
+
+function aplicarFiltros(){
+
+const ini=document.getElementById("fDataInicio").value;
+const fim=document.getElementById("fDataFim").value;
+const op=document.getElementById("fOperador").value;
+const maq=document.getElementById("fRecurso").value;
+
+dadosFiltrados=dados.filter(d=>{
+if(ini && d.data < new Date(ini)) return false;
+if(fim && d.data > new Date(fim+"T23:59:59")) return false;
+if(op && d.operador!==op) return false;
+if(maq && d.recurso!==maq) return false;
+return true;
+});
+
+atualizar();
+}
+
+function limparFiltros(){
+document.getElementById("fDataInicio").value="";
+document.getElementById("fDataFim").value="";
+document.getElementById("fOperador").value="";
+document.getElementById("fRecurso").value="";
+dadosFiltrados=[...dados];
+atualizar();
+}
+
+function atualizar(){
+
+const velP=dadosFiltrados.reduce((s,d)=>s+d.velPadrao,0)/dadosFiltrados.length||0;
+const velR=dadosFiltrados.reduce((s,d)=>s+d.velReal,0)/dadosFiltrados.length||0;
+
+document.getElementById("velPadrao").innerText=velP.toFixed(2);
+document.getElementById("velReal").innerText=velR.toFixed(2);
+
+gerarGrafico("grafRecurso","recurso");
+gerarGrafico("grafOperador","operador");
+}
+
+function gerarGrafico(id,campo){
+
+let mapa={};
+
+dadosFiltrados.forEach(d=>{
+if(!mapa[d[campo]]){
+mapa[d[campo]]={p:0,q:0,d:0,c:0};
+}
+mapa[d[campo]].p+=d.performance;
+mapa[d[campo]].q+=d.qualidade;
+mapa[d[campo]].d+=d.disponibilidade;
+mapa[d[campo]].c++;
+});
+
+let labels=Object.keys(mapa);
+let perf=[],qual=[],disp=[];
+
+labels.forEach(l=>{
+perf.push((mapa[l].p/mapa[l].c)*100);
+qual.push((mapa[l].q/mapa[l].c)*100);
+disp.push((mapa[l].d/mapa[l].c)*100);
+});
+
+if(graficos[id])graficos[id].destroy();
+
+graficos[id]=new Chart(document.getElementById(id),{
+type:"bar",
+data:{
+labels:labels,
+datasets:[
+{label:"Performance",data:perf,backgroundColor:"#007bff"},
+{label:"Qualidade",data:qual,backgroundColor:"#c40000"},
+{label:"Disponibilidade",data:disp,backgroundColor:"#28a745"}
+]
+},
+options:{
+responsive:true,
+scales:{y:{max:100}},
+plugins:{legend:{position:"top"}}
+}
+});
+}
+
+</script>
+</body>
+</html>
