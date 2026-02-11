@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>DS - Dashboard OEE</title>
+<link rel="icon" type="image/png" href="logo.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+:root{
+--vermelho:#c40000;
+--grafite:#1f1f1f;
+--cinza:#f4f6f9;
+}
+
+body{
+margin:0;
+font-family:Arial;
+background:var(--cinza);
+transition:0.3s;
+}
+
+header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:15px 30px;
+background:white;
+box-shadow:0 2px 5px rgba(0,0,0,0.1);
+}
+
+.logo-area{
+display:flex;
+align-items:center;
+gap:15px;
+}
+
+.logo-area img{
+height:40px;
+}
+
+button{
+padding:10px 18px;
+border:none;
+background:var(--vermelho);
+color:white;
+border-radius:6px;
+cursor:pointer;
+margin:5px 5px 5px 0;
+font-weight:bold;
+}
+
+.toggle{
+background:#444;
+}
+
+.container{
+padding:30px 40px;
+}
+
+textarea{
+width:100%;
+height:140px;
+padding:10px;
+border-radius:8px;
+border:1px solid #ccc;
+}
+
+.filtros{
+display:flex;
+gap:20px;
+flex-wrap:wrap;
+margin:20px 0;
+}
+
+select,input{
+padding:8px;
+border-radius:6px;
+border:1px solid #ccc;
+}
+
+canvas{
+background:white;
+border-radius:10px;
+padding:15px;
+margin-bottom:40px;
+box-shadow:0 3px 8px rgba(0,0,0,0.1);
+}
+
+.dark{
+background:#1f1f1f;
+color:white;
+}
+
+.dark header{background:#2a2a2a;}
+.dark textarea,.dark select,.dark input{background:#333;color:white;border:none;}
+.dark canvas{background:#2a2a2a;}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="logo-area">
+<img src="logo.png">
+<button onclick="voltar()">⬅ Voltar</button>
+</div>
+<button class="toggle" onclick="alternarModo()">🌙</button>
+</header>
+
+<div class="container">
+
+<h1>Dashboard OEE</h1>
+
+<textarea id="entrada" placeholder="Cole os dados separados por TAB"></textarea>
+
+<br><br>
+
+<button onclick="processar()">Gerar Relatório</button>
+<button onclick="exportarPDF()">Exportar PDF</button>
+
+<div class="filtros">
+<div>
+<label>Recurso:</label><br>
+<select id="filtroRecurso" onchange="atualizar()">
+<option value="todos">Todos</option>
+</select>
+</div>
+
+<div>
+<label>Operador:</label><br>
+<select id="filtroOperador" onchange="atualizar()">
+<option value="todos">Todos</option>
+</select>
+</div>
+</div>
+
+<h2>Performance / Qualidade / Disponibilidade por Recurso</h2>
+<canvas id="grafRecurso"></canvas>
+
+<h2>Performance / Qualidade / Disponibilidade por Operador</h2>
+<canvas id="grafOperador"></canvas>
+
+</div>
+
+<script>
+
+let dados=[];
+let graficos={};
+
+function voltar(){window.location.href="index.html";}
+function alternarModo(){document.body.classList.toggle("dark");}
+
+function normalizar(valor){
+if(!valor) return 0;
+valor = valor.replace("%","").replace(",",".");
+valor = Number(valor);
+if(valor > 1) valor = valor/100;
+return valor;
+}
+
+function processar(){
+
+dados=[];
+const texto=document.getElementById("entrada").value.trim();
+if(!texto)return alert("Cole os dados");
+
+let linhas=texto.split("\n");
+
+linhas.forEach(l=>{
+let c=l.split("\t");
+if(c.length<14)return;
+
+dados.push({
+data:c[0],
+recurso:c[1],
+operador:c[2],
+performance:normalizar(c[10]),
+qualidade:normalizar(c[11]),
+disponibilidade:normalizar(c[12])
+});
+});
+
+popularFiltros();
+atualizar();
+}
+
+function popularFiltros(){
+let recursos=[...new Set(dados.map(d=>d.recurso))];
+let operadores=[...new Set(dados.map(d=>d.operador))];
+
+let fr=document.getElementById("filtroRecurso");
+let fo=document.getElementById("filtroOperador");
+
+fr.innerHTML='<option value="todos">Todos</option>';
+fo.innerHTML='<option value="todos">Todos</option>';
+
+recursos.forEach(r=>{
+fr.innerHTML+=`<option value="${r}">${r}</option>`;
+});
+
+operadores.forEach(o=>{
+fo.innerHTML+=`<option value="${o}">${o}</option>`;
+});
+}
+
+function atualizar(){
+
+let fr=document.getElementById("filtroRecurso").value;
+let fo=document.getElementById("filtroOperador").value;
+
+let filtrado=dados.filter(d=>{
+return (fr==="todos"||d.recurso===fr)
+&& (fo==="todos"||d.operador===fo);
+});
+
+gerarGrafico("grafRecurso","recurso",filtrado);
+gerarGrafico("grafOperador","operador",filtrado);
+}
+
+function gerarGrafico(id,campo,dadosFiltrados){
+
+let mapa={};
+
+dadosFiltrados.forEach(d=>{
+if(!mapa[d[campo]]){
+mapa[d[campo]]={p:0,q:0,d:0,c:0};
+}
+mapa[d[campo]].p+=d.performance;
+mapa[d[campo]].q+=d.qualidade;
+mapa[d[campo]].d+=d.disponibilidade;
+mapa[d[campo]].c++;
+});
+
+let labels=Object.keys(mapa);
+
+let perf=[],qual=[],disp=[];
+
+labels.forEach(l=>{
+perf.push((mapa[l].p/mapa[l].c)*100);
+qual.push((mapa[l].q/mapa[l].c)*100);
+disp.push((mapa[l].d/mapa[l].c)*100);
+});
+
+let combinado=labels.map((l,i)=>({
+label:l,
+media:(perf[i]+qual[i]+disp[i])/3,
+perf:perf[i],
+qual:qual[i],
+disp:disp[i]
+}));
+
+combinado.sort((a,b)=>b.media-a.media);
+
+labels=combinado.map(x=>x.label);
+perf=combinado.map(x=>x.perf);
+qual=combinado.map(x=>x.qual);
+disp=combinado.map(x=>x.disp);
+
+if(graficos[id])graficos[id].destroy();
+
+graficos[id]=new Chart(document.getElementById(id),{
+type:"bar",
+data:{
+labels:labels,
+datasets:[
+{label:"Performance",data:perf,backgroundColor:"#c40000"},
+{label:"Qualidade",data:qual,backgroundColor:"#666"},
+{label:"Disponibilidade",data:disp,backgroundColor:"#999"}
+]
+},
+options:{
+responsive:true,
+scales:{y:{max:100}},
+plugins:{legend:{position:"top"}}
+}
+});
+}
+
+async function exportarPDF(){
+const { jsPDF }=window.jspdf;
+const pdf=new jsPDF("p","mm","a4");
+let y=10;
+
+["grafRecurso","grafOperador"].forEach(id=>{
+let canvas=document.getElementById(id);
+let img=canvas.toDataURL("image/png");
+pdf.addImage(img,"PNG",10,y,190,80);
+y+=90;
+});
+
+pdf.save("OEE_DS.pdf");
+}
+
+</script>
+</body>
+</html>
