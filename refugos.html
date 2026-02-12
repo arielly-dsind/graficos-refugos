@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>DS - Dashboard Refugos</title>
+<link rel="icon" type="image/png" href="logo.png?v=10">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf"></script>
+
+<style>
+:root{
+--vermelho:#c40000;
+--grafite:#121212;
+--grafiteCard:#1f1f1f;
+--claro:#f4f6f9;
+}
+
+body{
+margin:0;
+font-family:Arial;
+background:var(--grafite);
+color:white;
+display:flex;
+height:100vh;
+overflow:hidden;
+transition:0.3s;
+}
+
+.light{
+background:var(--claro);
+color:black;
+}
+
+.sidebar{
+width:250px;
+background:#000;
+padding:20px;
+display:flex;
+flex-direction:column;
+transition:0.3s;
+}
+
+.sidebar.collapsed{
+width:70px;
+padding:20px 10px;
+}
+
+.sidebar h2{
+color:var(--vermelho);
+margin-top:0;
+}
+
+.menu-item{
+padding:12px;
+margin-bottom:10px;
+cursor:pointer;
+border-radius:6px;
+background:#1f1f1f;
+transition:0.2s;
+}
+
+.menu-item:hover{
+background:var(--vermelho);
+}
+
+.sidebar.collapsed .menu-item{
+display:none;
+}
+
+.content{
+flex:1;
+display:flex;
+flex-direction:column;
+}
+
+header{
+display:flex;
+align-items:center;
+padding:15px 30px;
+background:#000;
+}
+
+.menu-toggle{
+font-size:22px;
+cursor:pointer;
+margin-right:15px;
+min-width:30px;
+}
+
+header h2{
+color:var(--vermelho);
+margin:0;
+}
+
+.header-right{
+margin-left:auto;
+display:flex;
+gap:10px;
+}
+
+button{
+padding:8px 15px;
+background:var(--vermelho);
+color:white;
+border:none;
+border-radius:6px;
+cursor:pointer;
+}
+
+.toggle{
+background:#333;
+}
+
+.container{
+padding:30px 40px;
+overflow:auto;
+flex:1;
+}
+
+.card{
+background:var(--grafiteCard);
+padding:20px;
+border-radius:10px;
+margin-bottom:20px;
+}
+
+textarea{
+width:100%;
+height:120px;
+padding:10px;
+border-radius:6px;
+border:none;
+background:#2a2a2a;
+color:white;
+}
+
+select,input{
+padding:8px;
+border-radius:6px;
+border:none;
+background:#2a2a2a;
+color:white;
+margin-right:10px;
+margin-bottom:10px;
+}
+
+canvas{
+background:var(--grafiteCard);
+padding:15px;
+border-radius:10px;
+margin-bottom:40px;
+}
+
+.light .sidebar{background:#eaeaea;}
+.light .menu-item{background:white;color:black;}
+.light header{background:white;}
+.light textarea,
+.light select,
+.light input{background:white;color:black;border:1px solid #ccc;}
+.light .card,
+.light canvas{background:white;color:black;}
+</style>
+</head>
+
+<body>
+
+<div class="sidebar" id="sidebar">
+<h2>DS</h2>
+<div class="menu-item" onclick="selecionarSetor('injetora')">INJETORA</div>
+<div class="menu-item" onclick="selecionarSetor('usinagem')">USINAGEM</div>
+<div class="menu-item" onclick="selecionarSetor('estampagem')">ESTAMPAGEM</div>
+</div>
+
+<div class="content">
+
+<header>
+<div class="menu-toggle" onclick="toggleMenu()">☰</div>
+<h2>Dashboard Refugos</h2>
+<div class="header-right">
+<button onclick="irTelaInicial()">TELA INICIAL</button>
+<button class="toggle" onclick="alternarModo()">☀️</button>
+</div>
+</header>
+
+<div class="container" id="conteudo">
+<div class="card">
+<h3>Selecione um setor</h3>
+<p>Este dashboard foi desenvolvido para análise gráfica do índice de refugo por setor.</p>
+</div>
+</div>
+
+</div>
+
+<script>
+
+let dados=[];
+let dadosFiltrados=[];
+let graficos={};
+
+function irTelaInicial(){ window.location.href="index.html"; }
+function alternarModo(){ document.body.classList.toggle("light"); }
+function toggleMenu(){ document.getElementById("sidebar").classList.toggle("collapsed"); }
+
+function selecionarSetor(setor){
+document.getElementById("sidebar").classList.add("collapsed");
+if(setor==="injetora"){
+document.getElementById("conteudo").innerHTML = gerarDashboard();
+}else{
+document.getElementById("conteudo").innerHTML = `
+<div class="card">
+<h3>🚧 Setor em desenvolvimento</h3>
+<p>Estamos desenvolvendo os indicadores deste setor.</p>
+<button onclick="toggleMenu()">Abrir Menu</button>
+</div>`;
+}
+}
+
+function gerarDashboard(){
+return `
+<div class="card">
+<textarea id="entrada" placeholder="Cole os dados respeitando as 11 colunas"></textarea>
+<br><br>
+<button onclick="processar()">Gerar Relatório</button>
+<button onclick="gerarPDF()">Gerar PDF</button>
+</div>
+
+<div class="card">
+<b>Filtros:</b><br><br>
+<input type="date" id="fDataIni">
+<input type="date" id="fDataFim">
+<select id="fOperador"><option value="">Operador</option></select>
+<select id="fMotivo"><option value="">Motivo</option></select>
+<select id="fLinha"><option value="">Linha</option></select>
+<select id="fCodigo"><option value="">Código Produto</option></select>
+<button onclick="aplicarFiltros()">Aplicar</button>
+<button onclick="limparFiltros()">Limpar Filtros</button>
+</div>
+
+<div class="card">
+Total Registros: <b id="kpiRegistros">0</b><br>
+Total Refugos: <b id="kpiTotal">0</b><br>
+Média Diária: <b id="kpiMedia">0</b><br>
+Operador com mais refugo: <b id="kpiOperador">-</b><br>
+Motivo com mais refugo: <b id="kpiMotivo">-</b><br>
+Linha com mais refugo: <b id="kpiLinha">-</b><br>
+Código com mais refugo: <b id="kpiCodigo">-</b>
+</div>
+
+<h3>Refugo por Linha</h3>
+<canvas id="grafLinha"></canvas>
+
+<h3>Refugo por Classificação</h3>
+<canvas id="grafClassificacao"></canvas>
+
+<h3>Refugo por Motivo</h3>
+<canvas id="grafRefugo"></canvas>
+
+<h3>Refugo por Operador</h3>
+<canvas id="grafOperador"></canvas>
+
+<h3>Refugo por Código Produto</h3>
+<canvas id="grafCodigo"></canvas>
+`;
+}
+
+function limparFiltros(){
+document.getElementById("fDataIni").value="";
+document.getElementById("fDataFim").value="";
+document.getElementById("fOperador").value="";
+document.getElementById("fMotivo").value="";
+document.getElementById("fLinha").value="";
+document.getElementById("fCodigo").value="";
+dadosFiltrados=[...dados];
+atualizar();
+}
+
+function parseData(t){
+const [d,m,a]=t.split("/");
+return new Date(`${a}-${m}-${d}`);
+}
+
+function processar(){
+dados=[];
+const texto=document.getElementById("entrada").value.trim();
+if(!texto){ alert("Cole os dados"); return; }
+
+texto.split("\n").forEach(l=>{
+const c=l.split("\t");
+if(c.length<11) return;
+
+dados.push({
+data:parseData(c[0]),
+operador:c[2],
+codigoProduto:c[4],
+quantidade:Number(c[6].replace(",", ".")),
+motivo:c[8],
+classificacao:c[9],
+linha:c[10]
+});
+});
+
+popularFiltros();
+dadosFiltrados=[...dados];
+atualizar();
+}
+
+function popularFiltros(){
+popularSelect("fOperador","operador");
+popularSelect("fMotivo","motivo");
+popularSelect("fLinha","linha");
+popularSelect("fCodigo","codigoProduto");
+}
+
+function popularSelect(id,campo){
+const select=document.getElementById(id);
+const valores=[...new Set(dados.map(d=>d[campo]))].sort();
+select.innerHTML=`<option value="">${select.options[0].text}</option>`;
+valores.forEach(v=>{
+select.innerHTML+=`<option value="${v}">${v}</option>`;
+});
+}
+
+function aplicarFiltros(){
+const ini=document.getElementById("fDataIni").value;
+const fim=document.getElementById("fDataFim").value;
+const op=document.getElementById("fOperador").value;
+const mot=document.getElementById("fMotivo").value;
+const lin=document.getElementById("fLinha").value;
+const cod=document.getElementById("fCodigo").value;
+
+dadosFiltrados=dados.filter(d=>{
+if(ini && d.data < new Date(ini)) return false;
+if(fim && d.data > new Date(fim+"T23:59:59")) return false;
+if(op && d.operador!==op) return false;
+if(mot && d.motivo!==mot) return false;
+if(lin && d.linha!==lin) return false;
+if(cod && d.codigoProduto!==cod) return false;
+return true;
+});
+
+atualizar();
+}
+
+function atualizar(){
+
+let total=dadosFiltrados.reduce((s,d)=>s+d.quantidade,0);
+document.getElementById("kpiRegistros").innerText=dadosFiltrados.length;
+document.getElementById("kpiTotal").innerText=total;
+
+const dias=[...new Set(dadosFiltrados.map(d=>d.data.toDateString()))];
+document.getElementById("kpiMedia").innerText=(total/dias.length||0).toFixed(2);
+
+calcularTop("operador","kpiOperador");
+calcularTop("motivo","kpiMotivo");
+calcularTop("linha","kpiLinha");
+calcularTop("codigoProduto","kpiCodigo");
+
+gerarGrafico("grafLinha","linha");
+gerarGrafico("grafClassificacao","classificacao");
+gerarGrafico("grafRefugo","motivo");
+gerarGrafico("grafOperador","operador");
+gerarGrafico("grafCodigo","codigoProduto");
+}
+
+function calcularTop(campo,id){
+let mapa={};
+dadosFiltrados.forEach(d=>{
+if(!mapa[d[campo]]) mapa[d[campo]]=0;
+mapa[d[campo]]+=d.quantidade;
+});
+let ordenado=Object.entries(mapa).sort((a,b)=>b[1]-a[1]);
+document.getElementById(id).innerText=ordenado.length?ordenado[0][0]:"-";
+}
+
+function gerarGrafico(id,campo){
+
+let mapa={};
+dadosFiltrados.forEach(d=>{
+if(!mapa[d[campo]]) mapa[d[campo]]=0;
+mapa[d[campo]]+=d.quantidade;
+});
+
+let ordenado=Object.entries(mapa).sort((a,b)=>b[1]-a[1]);
+
+let labels=ordenado.map(i=>i[0]);
+let valores=ordenado.map(i=>i[1]);
+
+if(graficos[id]) graficos[id].destroy();
+
+graficos[id]=new Chart(document.getElementById(id),{
+type:"bar",
+data:{
+labels:labels,
+datasets:[{data:valores,backgroundColor:"#c40000"}]
+},
+options:{
+responsive:true,
+plugins:{legend:{display:false}},
+scales:{
+x:{
+ticks:{
+autoSkip:false,
+maxRotation:90,
+minRotation:45
+}
+}
+}
+}
+});
+}
+
+function gerarPDF(){
+const doc = new jspdf.jsPDF();
+doc.text("Relatório de Refugos - DS", 20, 20);
+doc.save("relatorio_refugos.pdf");
+}
+
+</script>
+</body>
+</html>
